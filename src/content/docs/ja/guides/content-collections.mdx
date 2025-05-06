@@ -40,7 +40,7 @@ Astro v5.0ではコンテンツコレクションを定義し、呼び出すた�
 
 ## コレクションのためのTypeScript構成
 
-コンテンツコレクションはZodのバリデーション、エディターのインテリジェンスと型チェックなどでTypeScriptに依存しています。Astroの `strict` または `strictest` TypeScript拡張を利用していない場合、 `tsconfig.json` 内の `compilerOptions` は次のように指定していることを確認する必要があります:
+コンテンツコレクションはZodのバリデーション、エディターのインテリジェンスや型チェックなどでTypeScriptに依存しています。Astroの `strict` または `strictest` TypeScript拡張を利用していない場合、 `tsconfig.json` 内の `compilerOptions` は以下のように指定する必要があります:
 
 ```json title="tsconfig.json" ins={5} {6}
 {
@@ -56,9 +56,125 @@ Astro v5.0ではコンテンツコレクションを定義し、呼び出すた�
 ## コレクションの定義
 
 個々のコレクションは `defineCollection()` で指定します:
-- `loader` for a data source (required)
-- a `schema` for type safety (optional, but highly recommended!) 
+- `loader` データソースを読み込む (必須)
+- `schema` 型安全にする (任意ですが、強く推奨されます) 
 
+### コレクション設定ファイル
+
+コレクションを定義するには、 `src/content.config.ts` (`.js`、`.mjs`拡張子もサポートしています) をプロジェクトに作成する必要があります。
+
+```ts title="src/content.config.ts"
+// 1. `astro:content` からユーティリティをインポート
+import { defineCollection, z } from 'astro:content';
+
+// 2. ローダーをインポート
+import { glob, file } from 'astro/loaders';
+
+// 3. コレクションを定義
+const blog = defineCollection({ /* ... */ });
+const dogs = defineCollection({ /* ... */ });
+
+// 4. `collections` オブジェクトにコレクションを登録し、エクスポート
+export const collections = { blog, dogs };
+```
+
+### コレクションローダーの定義
+
+コンテンツレイヤーAPIは、(プロジェクトのローカルかリモートかのどちらに保存されているかに関わらず)コンテンツにフェッチし、 `loader` プロパティを使用してデータを取得することができます。
+
+#### ビルトインローダー
+
+Astroは[2つのビルトインローダー関数](/ja/reference/content-loader-reference/#built-in-loaders) (`glob()`と`file()`)が用意されているほか、独自のローダーを構築してリモートデータを取得するためのAPIへのアクセスも用意されています。
+
+[`glob()`ローダー](/ja/reference/content-loader-reference/#glob-loader) はファイルシステム上にあるMarkdown、MDX、Markdoc、JSON、YAMLファイルのディレクトリをエントリとして作成します。[micromatch](https://github.com/micromatch/micromatch#matching-features)でサポートされているglobパターンを用いてエントリファイルを探す `pattern` と、ファイルが配置されているベースファイルパスを指定します。各エントリの `id` はファイル名から自動的に生成されます。各エントリごとに1つのファイルがある場合、このローダーを使用してください。
+
+[`file()` ローダー](/ja/reference/content-loader-reference/#file-loader) は1つのローカルファイルから複数のエントリを作成します。ファイル内のそれぞれのエントリにはユニークな `id` キープロパティを持っている必要があります。ファイルへの `base` ファイルパスと、オプションで、自動的に解析できないデータファイル用の [`parser` 関数](#parser-関数) が利用できます。パースした際にオブジェクトの配列となるようなファイルの場合はこのローダーを使用してください。
+
+```ts  title="src/content.config.ts" {5,9}
+import { defineCollection, z } from 'astro:content';
+import { glob, file } from 'astro/loaders'; // レガシーAPIでは使用できません
+
+const blog = defineCollection({
+  loader: glob({ pattern: "**/*.md", base: "./src/data/blog" }),
+  schema: /* ... */
+});
+const dogs = defineCollection({
+  loader: file("src/data/dogs.json"),
+  schema: /* ... */
+});
+
+const probes = defineCollection({
+  // `loader` は文字列だけでなく複数のパターンを配列で受け取れます
+  // space-probesディレクトリの中で、"voyager-"から始まるもの以外の全てのMarkdownファイルをロードします
+  loader: glob({ pattern: ['*.md', '!voyager-*'], base: 'src/data/space-probes' }),
+  schema: z.object({
+    name: z.string(),
+    type: z.enum(['Space Probe', 'Mars Rover', 'Comet Lander']),
+    launch_date: z.date(),
+    status: z.enum(['Active', 'Inactive', 'Decommissioned']),
+    destination: z.string(),
+    operator: z.string(),
+    notable_discoveries: z.array(z.string()),
+  }),
+});
+
+export const collections = { blog, dogs, probes };
+```
+
+##### `parser` 関数
+
+`file()` ローダーは2つ目の引数に `parser` 関数を渡せます。これによりカスタムパーサー (e.g. `toml.parse` や `csv-parse`) を指定してファイルのコンテンツからコレクションを作成できます。
+
+`file()` ローダーは自動的にJSONやYAMLファイルを(それらの拡張子によって)発見しパースするため、[ネストされたJSONドキュメント](#ネストされた-json-ドキュメント)でない限りは `parser` を使う必要はありません。`.toml`や`.csv`など、他のファイルを利用する場合は、パーサー関数を作成する必要があります。
+
+次の例では `.toml` ファイルを使用してコンテンツコレクションの `dogs` を定義しています:
+
+```toml title="src/data/dogs.toml"
+[[dogs]]
+id = "..."
+age = "..."
+
+[[dogs]]
+id = "..."
+age = "..."
+```
+
+TOMLのパーサーをインポートしたら、 `file()` ローダーにファイルパスと `parser` 関数を渡すことで `dogs` コレクションをプロジェクトに読み込むことができます。同様のプロセスで、 `.csv` ファイルから `cats` コレクションを定義することができます:
+
+```typescript title="src/content.config.ts"
+import { defineCollection } from "astro:content";
+import { file } from "astro/loaders";
+import { parse as parseToml } from "toml";
+import { parse as parseCsv } from "csv-parse/sync";
+
+const dogs = defineCollection({
+  loader: file("src/data/dogs.toml", { parser: (text) => parseToml(text).dogs }),
+  schema: /* ... */
+})
+
+const cats = defineCollection({
+  loader: file("src/data/cats.csv", { parser: (text) => parseCsv(text, { columns: true, skipEmptyLines: true })})
+});
+```
+
+###### ネストされた `.json` ドキュメント
+
+`parser` 引数はネストされたJSONドキュメントから単一のコレクションを読み込むことができます。例えば、このJSONファイルには複数のコレクションが含まれています:
+
+```json title="src/data/pets.json"
+{"dogs": [{}], "cats": [{}]}
+```
+
+それぞれのコレクションの `file()` ローダーでカスタム `parser` を通すことで、これらのコレクションを分離することができます:
+
+```typescript title="src/content.config.ts"
+const dogs = defineCollection({
+  loader: file("src/data/pets.json", { parser: (text) => JSON.parse(text).dogs })
+});
+const cats = defineCollection({
+  loader: file("src/data/pets.json", { parser: (text) => JSON.parse(text).cats })
+});
+```
 
 
 
