@@ -1,10 +1,7 @@
 ---
 title: コンテンツコレクション
-description: >-
-  コンテンツコレクションは、Markdownを整理し、フロントマターをスキーマで型チェックするのに役立ちます。
+description: コンテンツを型安全に管理する。
 i18nReady: true
-banner:
-  content: 新しいコンテンツコレクションを試してみませんか？<a href="https://5-0-0-beta.docs.astro.build/ja/guides/upgrade-to/v5/">ベータ版のv5にアップグレード</a>！
 ---
 import { FileTree } from '@astrojs/starlight/components';
 import Since from '~/components/Since.astro'
@@ -15,53 +12,55 @@ import Badge from "~/components/Badge.astro"
   <Since v="2.0.0" />
 </p>
 
-**コンテンツコレクション**は、Astroプロジェクトでコンテンツを管理し、オーサリングするもっとも良い方法です。コレクションはドキュメントを整理し、フロントマターを検証、すべてのコンテンツに対して自動的にTypeScriptの型安全性を提供します。
+**コンテンツコレクション**は、Astroプロジェクトで複数のコンテンツを管理するもっとも良い方法です。コレクションはドキュメントを整理し、エディターのインテリジェンスと型チェックを有効にし、コンテンツにTypeScriptの型安全を自動的に提供します。
 
+Astro v5.0ではコンテンツコレクションを定義し、呼び出すためのコンテンツレイヤーAPIが登場しました。この機能的でスケーラブルなAPIは、ローカルに対してはビルトインのコンテンツローダーを提供します。リモートコンテンツに対しては、サードパーティやコミュニティ作成のローダーを利用したり、カスタムローダーを作成してあらゆるソースからデータを読み込んだりすることができます。
+
+:::note
+プロジェクトではAstro v2.0で登場した、レガシーのコンテンツコレクションAPIを使用し続けることができます。しかしながら、可能であれば[既存のコレクションのアップデート](/ja/guides/upgrade-to/v5/#legacy-v20-content-collections-api)をすることをおすすめします。
+:::
 
 ## コンテンツコレクションとは？
 
-予約されているプロジェクトディレクトリ`src/content`の中にあるトップレベルのディレクトリは、1つの**コンテンツコレクション**を表わします。たとえば`src/content/newsletter`や`src/content/authors`などになります。`src/content`ディレクトリの中に入れられるのは、コンテンツコレクションだけです。このディレクトリは他のものには使えません。
+構造的に似たデータの集合を **コレクション** として定義できます。これはブログポストのディレクトリや、複数の製品のJSONファイル、または同じ形状の複数のアイテムを表すデータです。
 
-**コレクションエントリー**は、コンテンツコレクションディレクトリ内に保存されたコンテンツのことです。エントリーには、Markdown（`.md`）やMDX （`.mdx` [MDXインテグレーション](/ja/guides/integrations-guide/mdx/)を使用）などのコンテンツオーサリングフォーマットや、YAML（`.yaml`）やJSON（`.json`）などのデータフォーマットを使用できます。コンテンツの検索と整理を容易にするため、ファイルには一貫性のある命名スキーム（小文字、スペースの代わりにダッシュ）の使用をおすすめしますが、これは必須ではありません。また、ファイル名の前にアンダースコア（_）を付けることで、[ビルド対象からエントリーを除外](/ja/guides/routing/#ページの除外)できます。
-
-<FileTree>
-- src/content/
-  - **newsletter/** "newsletter"コレクション
-    - week-1.md コレクションエントリー
-    - week-2.md コレクションエントリー
-    - week-3.md コレクションエントリー
-</FileTree>
-
-コレクションができたら、Astroの組み込みコンテンツAPIを使って[コンテンツのクエリ](#コレクションのクエリ)を始められます。
-
-### ".astro"ディレクトリ
-
-Astroは、コンテンツコレクションの重要なメタデータを、プロジェクト内の`.astro`ディレクトリに保存します。このディレクトリを維持または更新するために、何かする必要はありません。プロジェクトでの作業中は、このディレクトリを完全に無視してください。
-
-`.astro`ディレクトリは、[`astro dev`](/ja/reference/cli-reference/#astro-dev)コマンドや[`astro build`](/ja/reference/cli-reference/#astro-build)コマンドを実行すると常に自動で更新されます。必要に応じて[`astro sync`](/ja/reference/cli-reference/#astro-sync)を実行し、手動で`.astro`ディレクトリを更新できます。
-
-:::tip
-バージョン管理にGitを使っている場合は、`.gitignore`に `.astro`を追加して`.astro`ディレクトリを無視することをおすすめします。以下は、このディレクトリとその中のファイルを無視するようにGitに伝えます。
-:::
-
-### 複数のコレクションによる整理
-
-2つのファイルが異なる種類のコンテンツ（例えばブログの投稿と著者のプロフィール）を表す場合、それらは異なるコレクションに属する可能性が高いでしょう。多くの機能（フロントマターの検証、TypeScriptの自動型安全性）では、コレクション内のすべてのエントリーが同様の構造を共有する必要がありますので、これは重要です。
-
-さまざまなタイプのコンテンツを扱うことになったら、それぞれのタイプを表す複数のコレクションを作成する必要があります。プロジェクトには、いくつでも異なるコレクションを作成できます。
+プロジェクト内またはファイルシステム上にローカルに保存されるコレクションには、Markdown、MDX、Markdoc、YAML、またはJSONファイルのエントリを含めることができます:
 
 <FileTree>
-- src/content/
-  - **newsletter/**
-    - week-1.md
-    - week-2.md
-  - **blog/**
-    - post-1.md
-    - post-2.md
-  - **authors/**
-    - grace-hopper.json
-    - alan-turing.json
+- src/
+- **newsletter/** "newsletter" コレクション
+  - week-1.md コレクションエントリ
+  - week-2.md コレクションエントリ
+  - week-3.md コレクションエントリ
+- **authors/** "author" コレクション
+  - authors.json 全てのコレクションエントリを含めた単一のファイル
 </FileTree>
+
+適切なコレクションローダーを使用することで、CMS、データベース、ヘッドレス決済システムなどのあらゆる外部ソースのリモートデータにフェッチすることができます。
+
+## コレクションのためのTypeScript構成
+
+コンテンツコレクションはZodのバリデーション、エディターのインテリジェンスと型チェックなどでTypeScriptに依存しています。Astroの `strict` または `strictest` TypeScript拡張を利用していない場合、 `tsconfig.json` 内の `compilerOptions` は次のように指定していることを確認する必要があります:
+
+```json title="tsconfig.json" ins={5} {6}
+{
+  // "astro/tsconfigs/strict" または "astro/tsconfigs/strictest" に含まれる
+  "extends": "astro/tsconfigs/base",
+  "compilerOptions": {
+    "strictNullChecks": true, // `base` テンプレートを使用している場合
+    "allowJs": true // 必須であり、すべてのAstroテンプレートに含まれている
+  }
+}
+```
+
+## コレクションの定義
+
+個々のコレクションは `defineCollection()` で指定します:
+- `loader` for a data source (required)
+- a `schema` for type safety (optional, but highly recommended!) 
+
+
+
 
 ### サブディレクトリを使った整理
 
